@@ -2,21 +2,60 @@ const express = require('express')
 import {Request,Response } from "express";
 import User from "./user" ; 
 import bodyParser from "body-parser" ; 
-import serveStatic from "serve-static" ; 
+
 import cors from "cors" ; 
 import mongoose from "mongoose";
-
+import Post from "./Post";
+const fs = require("fs");
 const app = express();  
-
 app.use(bodyParser.json()) ; 
 
-app.use(serveStatic("public")) ; 
 
-app.use(cors()) ;
+var corsOptions = {
+    origin: "http://localhost:4200"
+  };
+  
+app.use(cors(corsOptions)) ;
+app.use(bodyParser.urlencoded({
+    extended: true
+}));
+
+
+const Keycloak = require('keycloak-connect') ;
+const session = require('express-session');
+const memoryStore = new session.MemoryStore()
+
+ app.use(session({
+  secret: 'mySecret',
+  resave: false,
+  saveUninitialized: true,
+  store: memoryStore
+}))
+
+const keycloak = new Keycloak({
+    store: memoryStore
+  })
+  app.use(keycloak.middleware({
+    logout: '/logout',
+    admin: '/',
+    protected: '/protected/resource'
+  }))
+ 
+
+
+  
+
+const  multipart  =  require('connect-multiparty');
+const  multipartMiddleware  =  multipart({ 
+         uploadDir:  './public' 
+});
+
+
+
+
+
 
 const uri:string="mongodb://localhost:27017/weConnect" ; 
-
-
 
 mongoose.connect(uri,(err)=>{
     if(err){
@@ -26,11 +65,56 @@ mongoose.connect(uri,(err)=>{
         console.log("Mongo db connection success") ; 
     }
 })
-app.get("/",(req:Request,resp:Response)=>{
-    resp.send("Setting Up") ; 
+
+
+
+
+
+/* // ------------------ Eureka Config --------------------------------------------
+
+const Eureka = require('eureka-js-client').Eureka;
+
+const eureka = new Eureka({
+  instance: {
+    app: 'express-service',
+    hostName: 'express-service',
+    ipAddr: '127.0.0.1',
+    statusPageUrl: 'http://localhost:8011',
+    port: {
+      '$': 8011,
+      '@enabled': 'true',
+    },
+    vipAddress: 'localhost',
+    dataCenterInfo: {
+      '@class': 'com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo',
+      name: 'MyOwn',
+    }
+  },
+  eureka: {
+    host: 'localhost',
+    port: 8761,
+    servicePath: '/eureka/apps/'
+  }
 });
-app.get("/users",(req:Request,resp:Response)=>{
-    User.find((err,users)=>{
+eureka.logger.level('debug');
+eureka.start((error:any)=>{
+  console.log(error || 'complete');
+});
+
+// ------------------ Server Config --------------------------------------------
+ */
+
+
+
+app.get("/",keycloak.protect(),(req:any,resp:Response)=>{
+     resp.send(req.session['keycloak-token'])
+}) ; 
+
+
+
+
+app.get("/posts",(req:Request,resp:Response)=>{
+    Post.find((err,users)=>{
         if(err){
             resp.status(500).send(err);
         }
@@ -38,33 +122,74 @@ app.get("/users",(req:Request,resp:Response)=>{
             resp.send(users) ; 
         }
     }) ; 
-}) ; 
+}) ;
 
+app.post("/posts",multipartMiddleware,(req:Request,resp:Response)=>{  
 
-//requete post
-app.post("/users",(req:Request,resp:Response)=>{
-    let user = new User(req.body);
-    user.save(err=>{
+    let post = new Post({
+        title : req.body.title,
+        description : req.body.description,
+        userName:  req.body.userName,
+        userId:  req.body.userId, 
+        ImageName:req.body.ImageName
+        
+    });
+    post.save(err=>{
         if(err) resp.status(500).send(err); 
-        else resp.send(user) ; 
+        else {resp.send(post)
+          
+        } ; 
     });
+
 });
 
-app.post("/users/:id",(req:Request,resp:Response)=>{
-    User.findByIdAndUpdate(req.params.id,req.body,(err: any,book: any)=>{
-        if(err) resp.status(500).send(err) ; 
-        else {
-            resp.send("successfully updated user")
-        }
-    })
-})
+app.patch("/:postId",(req:Request,resp:Response)=> {
+    try {
+        const updatePost =Post.updateOne(
+            { _id : req.params.postId},
+            {$set : {
+                title : req.body.title,
+                description : req.body.description,
+            }}
+        );
+        resp.json(updatePost);
 
-app.delete("/users/:id",(req:Request,resp:Response)=>{
-    User.deleteOne({_id:req.params.id},err=>{
-        if(err) resp.status(500).send(err) ; 
-        else resp.send("Successfully deleted user");
-    });
+    } catch (err) {
+        resp.json({ message : err});
+        //res.json("post not found to updated");
+    }
 });
+
+
+app.get("/posts/:id",(req:Request,resp:Response)=>{
+    Post.findOne({
+           '_id': req.params.id
+       },(err:any,posts:any)=>{
+           if(err){
+               resp.status(500).send(err);
+           }
+           else{
+               resp.send(posts) ; 
+           }
+       }) 
+   }) ; 
+
+
+
+   app.delete("/posts/:postId",async (req:Request,res:Response)=>{
+    try {
+        const removePost = await Post.deleteOne({ _id : req.params.postId});
+        res.json(removePost);
+        //res.json("Post succefully deleted");
+    } catch (err) {
+        res.json({ message : err});
+        //res.json("post not found to deleted");
+    }
+});
+
+
+
+app.use(express.static('public'));
 
 app.listen(8011,()=>{
     console.log("Server Started on port 8011")

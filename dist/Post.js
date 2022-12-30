@@ -5,18 +5,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
 const mongoose_paginate_1 = __importDefault(require("mongoose-paginate"));
-let userSchema = new mongoose_1.default.Schema({
-    Nom: String,
-    Prenom: String,
-    Email: String,
-    Password: String,
-    Status: String,
-    Birth: String,
-    Gender: String,
-    Num: Number
+let PostSchema = new mongoose_1.default.Schema({
+    userId: {
+        type: mongoose_1.default.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    userName: String,
+    title: String,
+    description: String,
+    ImageName: String
 }, {
     timestamps: true
 });
-userSchema.plugin(mongoose_paginate_1.default);
-const User = mongoose_1.default.model("User", userSchema);
-exports.default = User;
+PostSchema.plugin(mongoose_paginate_1.default);
+const Post = mongoose_1.default.model("Post", PostSchema);
+exports.default = Post;
